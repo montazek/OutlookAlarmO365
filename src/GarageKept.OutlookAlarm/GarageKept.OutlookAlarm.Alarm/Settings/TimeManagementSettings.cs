@@ -13,16 +13,18 @@ public class TimeManagementSettings : SettingsBase
 
     private ObservableCollection<Holiday> _holidays = new()
     {
-        new Holiday("New Year's Day", new DateTime(DateTime.Now.Year, 1, 1)),
-        new Holiday("Martin Luther King Jr. Day", GetNthDayOfWeek(DateTime.Now.Year, 1, DayOfWeek.Monday, 3)),
-        new Holiday("Presidents Day", GetNthDayOfWeek(DateTime.Now.Year, 2, DayOfWeek.Monday, 3)),
-        new Holiday("Memorial Day", GetLastDayOfWeek(DateTime.Now.Year, 5, DayOfWeek.Monday)),
-        new Holiday("Independence Day", new DateTime(DateTime.Now.Year, 7, 4)),
-        new Holiday("Labor Day", GetNthDayOfWeek(DateTime.Now.Year, 9, DayOfWeek.Monday, 1)),
-        new Holiday("Columbus Day", GetNthDayOfWeek(DateTime.Now.Year, 10, DayOfWeek.Monday, 2)),
-        new Holiday("Veterans Day", new DateTime(DateTime.Now.Year, 11, 11)),
-        new Holiday("Thanksgiving Day", GetNthDayOfWeek(DateTime.Now.Year, 11, DayOfWeek.Thursday, 4)),
-        new Holiday("Christmas Day", new DateTime(DateTime.Now.Year, 12, 25))
+        new Holiday("Novo leto", new DateTime(DateTime.Now.Year, 1, 1)),
+        new Holiday("Novo leto #2", new DateTime(DateTime.Now.Year, 1, 2)),
+        new Holiday("Presernov dan", GetNthDayOfWeek(DateTime.Now.Year, 2, DayOfWeek.Monday, 8)),
+        new Holiday("Dan OF", new DateTime(DateTime.Now.Year, 4, 27)),
+        new Holiday("Dan dela", new DateTime(DateTime.Now.Year, 5, 1)),
+        new Holiday("dan dela #2", new DateTime(DateTime.Now.Year, 5, 2)),
+        new Holiday("Dan drzavnosti", new DateTime(DateTime.Now.Year, 6, 25)),
+        new Holiday("Marijino vnebovzetje", new DateTime(DateTime.Now.Year, 8, 15)),
+        new Holiday("Dan reformacije", new DateTime(DateTime.Now.Year, 10, 31)),
+        new Holiday("Vsi sveti", new DateTime(DateTime.Now.Year, 11, 1)),
+        new Holiday("Bozic", new DateTime(DateTime.Now.Year, 12, 25)),
+        new Holiday("Dan samostojnosti", new DateTime(DateTime.Now.Year, 12, 26))
     };
 
     private ObservableCollection<DayOfWeek> _workDays = new()

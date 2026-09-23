@@ -1,5 +1,5 @@
 using GarageKept.OutlookAlarm.Alarm.AlarmManager;
-using GarageKept.OutlookAlarm.Alarm.AlarmSources.Outlook;
+using GarageKept.OutlookAlarm.Alarm.AlarmSources.Graph;
 using GarageKept.OutlookAlarm.Alarm.Audio;
 using GarageKept.OutlookAlarm.Alarm.Interfaces;
 using GarageKept.OutlookAlarm.Alarm.Settings;
@@ -32,11 +32,14 @@ internal static class Program
 
     private static IHostBuilder CreateHostBuilder()
     {
-        return Host.CreateDefaultBuilder().ConfigureServices(services =>
+        return Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
         {
             services.AddSingleton<IAlarmContainerControl, AlarmContainerControl>();
             services.AddSingleton<IAlarmManager, OutlookAlarmManager>();
-            services.AddSingleton<IAlarmSource, OutlookAlarmSource>();
+            services.AddSingleton<GraphAuthenticationService>();
+            services.AddSingleton(new HttpClient());
+            services.AddSingleton<IAlarmSource, GraphAlarmSource>();
             services.AddSingleton<IMainForm, MainForm>();
             services.AddSingleton<ISettings, OutlookAlarmSettings>();
             services.AddSingleton<ISettingsForm, SettingsForm>();
@@ -62,7 +65,9 @@ internal static class Program
         if (!OutlookAlarmMutex.WaitOne(TimeSpan.Zero, true)) return;
 #endif
 
-        Application.Run(ServiceProvider?.GetRequiredService<IMainForm>() as Form);
+        var mainForm = ServiceProvider?.GetRequiredService<IMainForm>() as Form
+                       ?? throw new InvalidOperationException("The main window could not be created.");
+        Application.Run(mainForm);
 
 #if !DEBUG
         OutlookAlarmMutex.ReleaseMutex();

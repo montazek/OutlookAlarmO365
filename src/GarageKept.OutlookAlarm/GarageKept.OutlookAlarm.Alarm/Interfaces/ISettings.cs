@@ -8,6 +8,7 @@ public interface ISettings
     AudioSettings Audio { get; set; }
     AlarmSourceSettings AlarmSource { get; set; }
     ColorSettings Color { get; set; }
+    GraphSettings Graph { get; set; }
     MainSettings Main { get; set; }
     TimeManagementSettings TimeManagement { get; set; }
 }

@@ -1,15 +1,16 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net7.0-windows10.0.17763.0</TargetFramework>
+    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <StartupObject>GarageKept.OutlookAlarm.Alarm.Program</StartupObject>
-    <AssemblyVersion>1.4.0.371</AssemblyVersion>
-    <FileVersion>1.4.0.371</FileVersion>
+    <AssemblyVersion>2.1.2.0</AssemblyVersion>
+    <FileVersion>2.1.2.0</FileVersion>
     <ApplicationIcon>Clock.ico</ApplicationIcon>
+    <AssemblyName>GarageKept.OutlookAlarm.O365</AssemblyName>
 
   </PropertyGroup>
 
@@ -26,17 +27,6 @@
     <None Remove="Audio\Media\urgent-simple-tone.wav" />
   </ItemGroup>
 
-  <ItemGroup>
-    <COMReference Include="Microsoft.Office.Interop.Outlook">
-      <WrapperTool>tlbimp</WrapperTool>
-      <VersionMinor>6</VersionMinor>
-      <VersionMajor>9</VersionMajor>
-      <Guid>00062fff-0000-0000-c000-000000000046</Guid>
-      <Lcid>0</Lcid>
-      <Isolated>false</Isolated>
-      <EmbedInteropTypes>true</EmbedInteropTypes>
-    </COMReference>
-  </ItemGroup>
 
   <ItemGroup>
     <Content Include="Clock.ico" />
@@ -44,7 +34,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="7.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.87.0" />
+    <PackageReference Include="Microsoft.Identity.Client.Extensions.Msal" Version="4.87.0" />
     <PackageReference Include="NAudio" Version="2.1.0" />
   </ItemGroup>
 
@@ -70,20 +62,12 @@
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
     <Compile Update="UI\Controls\AlarmControl.cs" />
-    <Compile Update="UI\Controls\AlarmProgressBar.cs">
-      <SubType>Component</SubType>
-    </Compile>
-    <Compile Update="UI\Controls\AlarmContainerControl.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
+    <Compile Update="UI\Controls\AlarmProgressBar.cs" />
+    <Compile Update="UI\Controls\AlarmContainerControl.cs" />
     <Compile Update="UI\Forms\AlarmForm.cs" />
-    <Compile Update="UI\Forms\BaseForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
+    <Compile Update="UI\Forms\BaseForm.cs" />
     <Compile Update="UI\Forms\MainForm.cs" />
-    <Compile Update="UI\Forms\SettingsForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
+    <Compile Update="UI\Forms\SettingsForm.cs" />
   </ItemGroup>
 
   <ItemGroup>

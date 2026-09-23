@@ -39,7 +39,7 @@ partial class AlarmForm
         SubjectLabel = new Label();
         DismissButton = new Button();
         SnoozeButton = new Button();
-        RefreshTimer = new Timer(){Interval = 1000};
+        RefreshTimer = new Timer(components);
         SuspendLayout();
         // 
         // TimeRight
@@ -102,13 +102,14 @@ partial class AlarmForm
         // 
         // RefreshTimer
         // 
-        RefreshTimer.Tick += FormRefresh;
         RefreshTimer.Enabled = true;
+        RefreshTimer.Tick += FormRefresh;
         // 
         // AlarmForm
         // 
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
+        BackColor = SystemColors.Control;
         ClientSize = new Size(330, 96);
         Controls.Add(TimeRight);
         Controls.Add(TimeLeft);

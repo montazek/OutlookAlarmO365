@@ -1,5 +1,7 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using GarageKept.OutlookAlarm.Alarm.Interfaces;
+using GarageKept.OutlookAlarm.Alarm.Diagnostics;
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Timer = System.Threading.Timer;
 
@@ -20,6 +22,7 @@ public sealed class OutlookAlarmManager : IAlarmManager
     private ConcurrentDictionary<string, IAlarm> Alarms { get; }
     private ConcurrentDictionary<string, Timer> AlarmTimers { get; }
     private ISettings Settings { get; }
+    private object SynchronizationLock { get; } = new();
     private Timer? UpdateAlarmListTimer { get; set; }
 
     public IAlarmManager.UpdateAlarmList AlarmsUpdatedCallback { get; set; }
@@ -63,12 +66,15 @@ public sealed class OutlookAlarmManager : IAlarmManager
 
     public void Reset()
     {
-        foreach (var timer in AlarmTimers.Values) timer.Dispose();
+        lock (SynchronizationLock)
+        {
+            foreach (var timer in AlarmTimers.Values) timer.Dispose();
 
-        Alarms.Clear();
-        AlarmTimers.Clear();
+            Alarms.Clear();
+            AlarmTimers.Clear();
 
-        FetchAlarms(this);
+            FetchAlarms(this);
+        }
     }
 
     public void Start()
@@ -83,7 +89,11 @@ public sealed class OutlookAlarmManager : IAlarmManager
         UpdateAlarmListTimer = null;
     }
 
-    public void Dispose() { Stop(); }
+    public void Dispose()
+    {
+        Stop();
+        AlarmSource.Dispose();
+    }
 
     private void AddAlarm(IAlarm alarm)
     {
@@ -131,6 +141,24 @@ public sealed class OutlookAlarmManager : IAlarmManager
 
     private void FetchAlarms(object? signature)
     {
+        try
+        {
+            lock (SynchronizationLock)
+            {
+                FetchAlarmsCore();
+            }
+        }
+        catch (Exception exception)
+        {
+            // Keep the alarms already in memory when the calendar provider is temporarily unavailable.
+            // The periodic timer will retry with a fresh COM connection.
+            Trace.WriteLine($"Unable to refresh calendar alarms: {exception}");
+            OutlookAlarmLog.Write("Unable to refresh calendar alarms.", exception);
+        }
+    }
+
+    private void FetchAlarmsCore()
+    {
         // Remove alarms that have ended already
         RemoveOldAlarms();
 
@@ -141,7 +169,7 @@ public sealed class OutlookAlarmManager : IAlarmManager
         var alarms = GetAlarmsFromSource(Settings.AlarmSource.FetchTimeInHours).ToList();
 
         // Look for orphans (Those who are in the list but are not in the current/upcoming items
-        // These are items that have been removed by Outlook, i.e. moved or deleted.
+        // These are items that have been removed by the calendar provider, i.e. moved or deleted.
         foreach (var alarm in alarms.Where(alarm => alarmsToCheck.Contains(alarm.Id))) alarmsToCheck.Remove(alarm.Id);
 
         // if we found an orphan, remove it
@@ -150,27 +178,24 @@ public sealed class OutlookAlarmManager : IAlarmManager
             var removeOrphans = Alarms.Values.Where(a => alarmsToCheck.Contains(a.Id));
             foreach (var alarm in removeOrphans)
             {
-                DeactivateAlarm(alarm);
-                RemoveAlarmTimer(alarm);
+                ForgetAlarm(alarm);
             }
         }
-
-        var hasUpdates = false;
 
         // Not update our list of alarms
         foreach (var alarm in alarms)
             if (Alarms.ContainsKey(alarm.Id))
             {
-                hasUpdates = UpdateAlarm(alarm) || hasUpdates;
+                UpdateAlarm(alarm);
             }
             else
             {
                 AddAlarm(alarm);
-                hasUpdates = true;
             }
 
-        if (hasUpdates)
-            OnAlarmsUpdated();
+        // Refresh the UI even when the provider returned unchanged appointments. This
+        // lets the display recover after a transient UI or fetch race.
+        OnAlarmsUpdated();
     }
 
     private Timer GenerateTimer(IAlarm alarm)
@@ -217,7 +242,13 @@ public sealed class OutlookAlarmManager : IAlarmManager
         timer.Dispose();
         AlarmTimers.Remove(alarm.Id, out _);
 
-        if (!Alarms.Values.Any(a => a.IsActive)) FetchAlarms(this);
+    }
+
+    private void ForgetAlarm(IAlarm alarm)
+    {
+        RemoveAlarmTimer(alarm);
+        Alarms.Remove(alarm.Id, out _);
+        OutlookAlarmLog.Write($"Forgot local alarm '{alarm.Name}'; it will be added again if the provider returns it.");
     }
 
     private void RemoveOldAlarms()
@@ -227,8 +258,9 @@ public sealed class OutlookAlarmManager : IAlarmManager
 
         foreach (var alarm in alarmsToRemove)
         {
-            DeactivateAlarm(alarm);
-            RemoveAlarmTimer(alarm);
+            // An ended appointment must not become a permanent local suppression.
+            // If the provider returns it again after a transient result, add it back.
+            ForgetAlarm(alarm);
         }
     }
 

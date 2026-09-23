@@ -1,4 +1,5 @@
-﻿using GarageKept.OutlookAlarm.Alarm.AlarmManager;
+using GarageKept.OutlookAlarm.Alarm.AlarmManager;
+using GarageKept.OutlookAlarm.Alarm.AlarmSources.Graph;
 using GarageKept.OutlookAlarm.Alarm.Audio;
 using GarageKept.OutlookAlarm.Alarm.Interfaces;
 using GarageKept.OutlookAlarm.Alarm.Settings;
@@ -10,7 +11,7 @@ namespace GarageKept.OutlookAlarm.Alarm.UI.Forms;
 
 public partial class SettingsForm : BaseForm, ISettingsForm
 {
-    private const string AppName = @"GarageKept.OutlookAlarm";
+    private const string AppName = @"GarageKept.OutlookAlarm.O365";
     private const string RunKeyPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
 
     private readonly DateTime _exampleDateTime =
@@ -18,6 +19,12 @@ public partial class SettingsForm : BaseForm, ISettingsForm
 
     private readonly TimeSpan _exampleTimeSpan = new(0, 3, 2, 1);
     private readonly IMediaPlayer _mediaPlayer;
+    private readonly TabPage _microsoft365Page = new("Microsoft 365");
+    private readonly TextBox _clientIdTextBox = new() { Dock = DockStyle.Fill };
+    private readonly TextBox _tenantIdTextBox = new() { Dock = DockStyle.Fill };
+    private readonly Label _connectionStatusLabel = new() { AutoSize = true, Text = "Not connected" };
+    private readonly Button _connectButton = new() { AutoSize = true, Text = "Connect" };
+    private bool _closeAfterConnect;
     private bool _isExpanded;
     private Timer? _slidingTimer;
 
@@ -26,6 +33,7 @@ public partial class SettingsForm : BaseForm, ISettingsForm
         Settings = settings;
 
         InitializeComponent();
+        InitializeMicrosoft365Page();
 
         _mediaPlayer = mediaPlayer;
 
@@ -36,6 +44,20 @@ public partial class SettingsForm : BaseForm, ISettingsForm
     }
 
     private ISettings Settings { get; }
+
+    public DialogResult ShowMicrosoft365Dialog()
+    {
+        settingsTabControl.SelectedTab = _microsoft365Page;
+        _closeAfterConnect = true;
+        try
+        {
+            return ShowDialog();
+        }
+        finally
+        {
+            _closeAfterConnect = false;
+        }
+    }
 
     public new DialogResult ShowDialog()
     {
@@ -295,7 +317,110 @@ public partial class SettingsForm : BaseForm, ISettingsForm
 
         #endregion
 
+        _clientIdTextBox.Text = Settings.Graph.ClientId;
+        _tenantIdTextBox.Text = Settings.Graph.TenantId;
+        _ = RefreshMicrosoft365StatusAsync();
+
         return base.ShowDialog();
+    }
+
+    private void InitializeMicrosoft365Page()
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(12),
+            ColumnCount = 2,
+            RowCount = 6
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        var explanation = new Label
+        {
+            AutoSize = true,
+            Dock = DockStyle.Fill,
+            Text = "Connect the app to Microsoft 365 so it can read your calendar. " +
+                   "The default values normally do not need to be changed."
+        };
+        layout.Controls.Add(explanation, 0, 0);
+        layout.SetColumnSpan(explanation, 2);
+        layout.Controls.Add(new Label { AutoSize = true, Text = "Client ID:", Anchor = AnchorStyles.Left }, 0, 1);
+        layout.Controls.Add(_clientIdTextBox, 1, 1);
+        layout.Controls.Add(new Label { AutoSize = true, Text = "Tenant ID:", Anchor = AnchorStyles.Left }, 0, 2);
+        layout.Controls.Add(_tenantIdTextBox, 1, 2);
+        layout.Controls.Add(new Label { AutoSize = true, Text = "Status:", Anchor = AnchorStyles.Left }, 0, 3);
+        layout.Controls.Add(_connectionStatusLabel, 1, 3);
+        layout.Controls.Add(_connectButton, 1, 4);
+
+        _connectButton.Click += ConnectButton_Click;
+        _microsoft365Page.Controls.Add(layout);
+        settingsTabControl.TabPages.Add(_microsoft365Page);
+    }
+
+    private async void ConnectButton_Click(object? sender, EventArgs e)
+    {
+        var clientId = _clientIdTextBox.Text.Trim();
+        var tenantId = _tenantIdTextBox.Text.Trim();
+        if (!Guid.TryParse(clientId, out _))
+        {
+            MessageBox.Show(this, "Client ID must be a valid GUID.", "Microsoft 365",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            MessageBox.Show(this, "Tenant ID is required.", "Microsoft 365",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        Settings.Graph.ClientId = clientId;
+        Settings.Graph.TenantId = tenantId;
+        _connectButton.Enabled = false;
+        _connectionStatusLabel.Text = "Connecting...";
+
+        try
+        {
+            var authentication = Program.ServiceProvider?.GetRequiredService<GraphAuthenticationService>();
+            if (authentication is null) throw new InvalidOperationException("Authentication service is unavailable.");
+            var account = await authentication.ConnectAsync(Handle);
+            _connectionStatusLabel.Text = $"Connected as {account}";
+            _connectButton.Text = "Reconnect";
+            if (_closeAfterConnect)
+            {
+                DialogResult = DialogResult.OK;
+                Close();
+            }
+        }
+        catch (Exception exception)
+        {
+            _connectionStatusLabel.Text = "Not connected";
+            MessageBox.Show(this, exception.Message, "Microsoft 365 sign-in failed",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            _connectButton.Enabled = true;
+        }
+    }
+
+    private async Task RefreshMicrosoft365StatusAsync()
+    {
+        try
+        {
+            var authentication = Program.ServiceProvider?.GetRequiredService<GraphAuthenticationService>();
+            var account = authentication is null ? null : await authentication.GetConnectedAccountAsync();
+            if (IsDisposed) return;
+            _connectionStatusLabel.Text = account is null ? "Not connected" : $"Connected as {account}";
+            _connectButton.Text = account is null ? "Connect" : "Reconnect";
+        }
+        catch (Exception exception)
+        {
+            if (IsDisposed) return;
+            _connectionStatusLabel.Text = $"Connection check failed: {exception.Message}";
+            _connectButton.Text = "Connect";
+        }
     }
 
 

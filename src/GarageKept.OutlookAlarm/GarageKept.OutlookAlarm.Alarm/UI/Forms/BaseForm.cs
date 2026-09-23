@@ -85,17 +85,19 @@ public class BaseForm : Form
     {
         if (!_isDragging) return;
 
+        var targetScreen = Screen.FromPoint(Cursor.Position);
+        var workingArea = targetScreen.WorkingArea;
         var xDelta = Cursor.Position.X - _dragCursorPoint.X;
         var x = _dragFormPoint.X + xDelta;
-        x = Math.Max(0, Math.Min(x, ScreenWidth - Width));
+        x = Math.Max(workingArea.Left, Math.Min(x, workingArea.Right - Width));
 
-        var y = 0;
+        var y = workingArea.Top;
 
         if (!PinTop)
         {
             var yDelta = Cursor.Position.Y - _dragCursorPoint.Y;
             y = _dragFormPoint.Y + yDelta;
-            y = Math.Max(0, Math.Min(y, ScreenHeight - Height));
+            y = Math.Max(workingArea.Top, Math.Min(y, workingArea.Bottom - Height));
         }
 
         Location = new Point(x, y);

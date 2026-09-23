@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using GarageKept.OutlookAlarm.Alarm.Interfaces;
 
 namespace GarageKept.OutlookAlarm.Alarm.Settings;
@@ -13,6 +13,7 @@ public class OutlookAlarmSettings : ISettings
         AlarmSource = new AlarmSourceSettings(Save);
         Audio = new AudioSettings(Save);
         Color = new ColorSettings(Save);
+        Graph = new GraphSettings(Save);
         Main = new MainSettings(Save);
         TimeManagement = new TimeManagementSettings(Save);
 
@@ -25,6 +26,7 @@ public class OutlookAlarmSettings : ISettings
         AlarmSource = settings.AlarmSource;
         Audio = settings.Audio;
         Color = settings.Color;
+        Graph = settings.Graph ?? new GraphSettings();
         Main = settings.Main;
         TimeManagement = settings.TimeManagement;
 
@@ -32,6 +34,7 @@ public class OutlookAlarmSettings : ISettings
         AlarmSource.Save = Save;
         Audio.Save = Save;
         Color.Save = Save;
+        Graph.Save = Save;
         Main.Save = Save;
         TimeManagement.Save = Save;
     }
@@ -40,12 +43,13 @@ public class OutlookAlarmSettings : ISettings
     public AlarmSourceSettings AlarmSource { get; set; }
     public AudioSettings Audio { get; set; }
     public ColorSettings Color { get; set; }
+    public GraphSettings Graph { get; set; }
     public MainSettings Main { get; set; }
     public TimeManagementSettings TimeManagement { get; set; }
 
     private static string GetAppFolder()
     {
-        const string appFolder = @"GarageKept\OutlookAlarm\";
+        const string appFolder = @"GarageKept\OutlookAlarmO365\";
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var settingsFilePath = Path.Combine(appDataPath, appFolder);
 
@@ -92,6 +96,8 @@ public class OutlookAlarmSettings : ISettings
             settings.Audio.Save = settings.Save;
             settings.Audio.Save = settings.Save;
             settings.Color.Save = settings.Save;
+            settings.Graph ??= new GraphSettings();
+            settings.Graph.Save = settings.Save;
             settings.Main.Save = settings.Save;
             settings.TimeManagement.Save = settings.Save;
         }

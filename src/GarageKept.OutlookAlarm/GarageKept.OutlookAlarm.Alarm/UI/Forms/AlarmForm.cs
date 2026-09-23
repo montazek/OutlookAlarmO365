@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using GarageKept.OutlookAlarm.Alarm.AlarmManager;
+using GarageKept.OutlookAlarm.Alarm.Diagnostics;
 using GarageKept.OutlookAlarm.Alarm.Interfaces;
 using Timer = System.Windows.Forms.Timer;
 
@@ -46,7 +47,8 @@ public partial class AlarmForm : BaseForm, IAlarmForm
     {
         Alarm = alarm ?? throw new ArgumentNullException(typeof(IAlarm).ToString());
 
-        var tooLateForAudio = DateTime.Now - Alarm.Start > TimeSpan.FromMinutes(Settings.Audio.TurnOffAlarmAfterStart);
+        var tooLateForAudio = Settings.Audio.TurnOffAlarmAfterStart >= 0 &&
+                              DateTime.Now - Alarm.Start > TimeSpan.FromMinutes(Settings.Audio.TurnOffAlarmAfterStart);
         var inQuietHours = Settings.TimeManagement.InQuietHours() && !Settings.TimeManagement.IsExceptionCategory(alarm.Categories);
         
         if (Alarm.IsAudible && !tooLateForAudio)
@@ -60,6 +62,10 @@ public partial class AlarmForm : BaseForm, IAlarmForm
             {
                 PlayAudio();
             }
+        }
+        else
+        {
+            OutlookAlarmLog.Write($"Audio skipped for '{Alarm.Name}': audible={Alarm.IsAudible}, tooLate={tooLateForAudio}, quietHours={inQuietHours}.");
         }
 
         SubjectLabel.Text = Alarm.Name;
@@ -117,10 +123,19 @@ public partial class AlarmForm : BaseForm, IAlarmForm
 
     private void PlayAudio()
     {
-        if (Alarm!.HasCustomSound)
+        if (Alarm!.HasCustomSound && File.Exists(Alarm.CustomSound))
+        {
+            OutlookAlarmLog.Write($"Playing custom audio for '{Alarm.Name}'.");
             MediaPlayerPlayer.PlaySound(Alarm.CustomSound, true);
+        }
         else
+        {
+            if (Alarm.HasCustomSound)
+                OutlookAlarmLog.Write($"Custom sound for '{Alarm.Name}' is unavailable; using the default sound.");
+            else
+                OutlookAlarmLog.Write($"Playing default audio for '{Alarm.Name}'.");
             MediaPlayerPlayer.PlaySound(Settings.Audio.DefaultSound, true);
+        }
     }
 
     private void RemoveActionSelectorItem(AlarmAction action)
@@ -142,7 +157,7 @@ public partial class AlarmForm : BaseForm, IAlarmForm
 
     private void SetBackGroundColor(Color backGroundColor)
     {
-        BackColor = DateTime.Now > Alarm?.Start ? Settings.Color.AlarmPastStartColor : backGroundColor;
+        BackColor = DateTime.Now > Alarm?.Start ? Settings.Color.AlarmPastStartColor : Settings.Color.GreenColor;
         ForeColor = DetermineTextColor(backGroundColor);
 
         // Exclude buttons from text color adjustment

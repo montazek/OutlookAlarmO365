@@ -185,6 +185,9 @@ publish/
 # Note: Comment the next line if you want to checkin your web deploy settings,
 # but database connection strings (with potential passwords) will be unencrypted
 *.pubxml
+# Safe, shared publish profiles used by the O365 Graph build instructions
+!src/GarageKept.OutlookAlarm/GarageKept.OutlookAlarm.Alarm/Properties/PublishProfiles/FrameworkDependent.pubxml
+!src/GarageKept.OutlookAlarm/GarageKept.OutlookAlarm.Alarm/Properties/PublishProfiles/Portable.pubxml
 *.publishproj
 
 # Microsoft Azure Web App publish settings. Comment the next line if you want to

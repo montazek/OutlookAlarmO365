@@ -1,5 +1,4 @@
-﻿using GarageKept.OutlookAlarm.Alarm.Interfaces;
-using Microsoft.Office.Interop.Outlook;
+using GarageKept.OutlookAlarm.Alarm.Interfaces;
 
 namespace GarageKept.OutlookAlarm.Alarm.AlarmSources;
 
@@ -13,29 +12,7 @@ public class Appointment : IAlarm
         Name = string.Empty;
         Organizer = string.Empty;
         TeamsMeetingUrl = string.Empty;
-    }
-
-    public Appointment(_AppointmentItem item)
-    {
-        AlarmColor = item.Categories.GetCategoryColor();
-        CustomSound = item.ReminderSoundFile;
-        Duration = item.Duration;
-        End = item.End;
-        Id = item.EntryID;
-        IsOwnEvent = item.Organizer == item.RequiredAttendees;
-        IsReminderEnabled = true;
-        ReminderTime = item.Start.AddMinutes(-item.ReminderMinutesBeforeStart);
-        Response = item.ResponseStatus.ResponseTypeConverter();
-        Start = item.Start;
-        Name = item.Subject;
-        IsAudible = true;
-        IsActive = true;
-        HasCustomSound = !string.IsNullOrEmpty(CustomSound);
-        Organizer = item.Organizer;
-        Categories.AddRange(item.Categories?.Split(new[] { ',' },
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>());
-        Location = item.Location;
-        TeamsMeetingUrl = ExtractTeamsMeetingUrlFromBody(item.Body);
+        AlarmColor = SystemColors.Control;
     }
 
     public double Duration { get; set; }
@@ -48,7 +25,6 @@ public class Appointment : IAlarm
     public bool HasCustomSound { get; set; }
     public string Id { get; set; }
     public bool IsActive { get; set; }
-
     public bool IsAudible { get; set; }
     public bool IsReminderEnabled { get; set; }
     public string Location { get; set; }
@@ -57,26 +33,4 @@ public class Appointment : IAlarm
     public DateTime ReminderTime { get; set; }
     public DateTime Start { get; set; }
     public string TeamsMeetingUrl { get; set; }
-
-    private static string ExtractTeamsMeetingUrlFromBody(string body)
-    {
-        // Implement your logic to extract the Teams meeting URL from the body
-        // This can be done using regular expressions, string manipulation, or any other suitable method
-        // Here's a simple example assuming the Teams meeting URL is enclosed within <TeamsMeetingURL> tags
-
-        const string startTag = "https://teams.microsoft.com";
-        const string endTag = ">";
-
-        var startIndex = body.IndexOf(startTag, StringComparison.Ordinal) - startTag.Length;
-
-        if (startIndex < 0) return string.Empty;
-
-        var endIndex = body.IndexOf(endTag, startIndex, StringComparison.Ordinal);
-
-        // Return null or an empty string if the Teams meeting URL is not found
-        if (endIndex < 0) return string.Empty;
-
-        startIndex += startTag.Length;
-        return body[startIndex..endIndex];
-    }
 }

@@ -10,6 +10,7 @@ namespace GarageKept.OutlookAlarm.Alarm.Audio;
 public class MediaPlayer : IMediaPlayer
 {
     private readonly WaveOutEvent _player = new();
+    private IDisposable? _customSoundStream;
 
     private readonly Dictionary<SoundType, UnmanagedMemoryStream> _soundStreams = new()
     {
@@ -29,8 +30,7 @@ public class MediaPlayer : IMediaPlayer
     /// <param name="whenStopped">callback when stopped</param>
     public void PlaySound(SoundType soundType, bool loopPlay, EventHandler<StoppedEventArgs>? whenStopped)
     {
-        if (_player.PlaybackState == PlaybackState.Playing)
-            _player.Stop();
+        StopSound();
 
         AudioEngine.UnMuteSystemVolume();
 
@@ -61,24 +61,24 @@ public class MediaPlayer : IMediaPlayer
         if (string.IsNullOrEmpty(customSound)) return;
         if (!File.Exists(customSound)) return;
 
+        StopSound();
         AudioEngine.UnMuteSystemVolume();
 
-        if (loopPlay)
-        {
-            using var wav = new LoopStream(new AudioFileReader(customSound));
-
-            _player.Init(wav);
-        }
-        else
-        {
-            using var wav = new AudioFileReader(customSound);
-            _player.Init(wav);
-        }
+        WaveStream soundStream = loopPlay
+            ? new LoopStream(new AudioFileReader(customSound))
+            : new AudioFileReader(customSound);
+        _customSoundStream = soundStream;
+        _player.Init(soundStream);
 
         if (whenStopped != null) _player.PlaybackStopped += whenStopped;
 
         _player.Play();
     }
 
-    public void StopSound() { _player.Stop(); }
+    public void StopSound()
+    {
+        _player.Stop();
+        _customSoundStream?.Dispose();
+        _customSoundStream = null;
+    }
 }
