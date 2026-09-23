@@ -1,3 +1,4 @@
+Outlook alarm / Microsoft 365 / Office 365 / Microsoft Graph / Reminder / Meeting
 # OutlookAlarm O365 (Microsoft Graph)
 
 A Windows desktop alarm application based on [GarageKept/OutlookAlarm](https://github.com/GarageKept/OutlookAlarm). This fork reads the signed-in user's Microsoft 365 calendar through Microsoft Graph. Classic Outlook and New Outlook do not need to be installed or running.
