@@ -11,22 +11,23 @@ A Windows desktop alarm application based on [GarageKept/OutlookAlarm](https://g
 
 ## Microsoft 365 connection
 
-On first launch, Settings opens on the Microsoft 365 tab. The included Client ID and Tenant ID are used by default. Change them before selecting **Connect** if you use a different Microsoft Entra application or tenant. The app requests the delegated Microsoft Graph `Calendars.Read` permission; a user must sign in and may need tenant administrator consent.
+On first launch, Settings opens on the Microsoft 365 tab. Select **Connect**, sign in with a work or school Microsoft 365 account, and approve access if your organization permits it. The app includes its own multitenant application registration, so normal users do not need to register an app or enter a Client ID or Tenant ID. Personal Outlook.com accounts are not supported in this version.
 
-When Microsoft requires another interactive sign-in, the Microsoft 365 Settings tab opens again. No `appsettings.json` file is required. User settings are stored in `%APPDATA%\GarageKept\OutlookAlarmO365\settings.json`, and the MSAL token cache is stored under `%LOCALAPPDATA%\GarageKept.OutlookAlarm.O365`.
+The app requests the delegated Microsoft Graph `Calendars.Read` permission to read the signed-in user's calendar. Your organization's consent policy may require an administrator to approve this app once. If Microsoft asks for administrator approval, contact your IT team; creating another app registration is not required for normal use.
 
-## Register your own Microsoft Entra application
+The selected account is remembered across restarts. This version is intended for one Microsoft 365 account per installation and does not offer account switching or disconnect. When Microsoft requires another interactive sign-in, open **Settings > Microsoft 365** and select **Reconnect**. The app also opens that tab when a new sign-in is required; after you close it, it waits for your next action instead of reopening it on each calendar poll.
 
-The included IDs target the preconfigured tenant. To use another tenant or your own app registration:
+No `appsettings.json` file is required. User settings are stored in `%APPDATA%\GarageKept\OutlookAlarmO365\settings.json`, and the protected MSAL token cache is stored under `%LOCALAPPDATA%\GarageKept.OutlookAlarm.O365`. The settings file stores account identifiers, not access or refresh tokens.
 
-1. Sign in to the [Microsoft Entra admin center](https://entra.microsoft.com/) in the tenant whose calendars you want to use. Open **Entra ID > App registrations > New registration**. For an organization-only setup, choose **Accounts in this organizational directory only**, then register the app.
-2. On the app's **Overview** page, copy **Application (client) ID** and **Directory (tenant) ID**.
-3. Open **Authentication > Add a platform > Mobile and desktop applications**. Add the redirect URI `http://localhost` for the system-browser sign-in used by this app. Under **Advanced settings**, set **Allow public client flows** to **Yes** and save.
-4. Open **API permissions > Add a permission > Microsoft Graph > Delegated permissions**. Find **Calendars.Read**, select it, and choose **Add permissions**. Select **Delegated permissions**, not **Application permissions**: the app reads the signed-in user's calendar.
-5. If your organization allows user consent, the user can approve this permission during sign-in. If its policy blocks user consent, an administrator must use **Grant admin consent for [tenant]** on the **API permissions** page.
-6. In OutlookAlarm, open **Settings > Microsoft 365**, enter the client and tenant IDs from step 2, select **Connect**, and complete the sign-in.
+## Advanced: use your own Microsoft Entra registration
 
-Do not create or enter a client secret for this desktop app. See Microsoft's [desktop app configuration](https://learn.microsoft.com/en-us/entra/identity-platform/scenario-desktop-app-configuration), [Graph permission setup](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-configure-app-access-web-apis), and [Calendars.Read definition](https://learn.microsoft.com/en-us/graph/permissions-reference#calendarsread).
+In **Settings > Microsoft 365**, select **Advanced: use my own app registration** before connecting. Enter its Application (client) ID and optionally a tenant ID or tenant domain. A blank tenant uses `organizations`. Existing installations with a custom registration keep their IDs after upgrading.
+
+For a tenant-specific registration, configure **Authentication > Add a platform > Mobile and desktop applications** with redirect URI `http://localhost`. Add Microsoft Graph **Delegated** `Calendars.Read` under **API permissions**. Do not create a client secret for this desktop app. Depending on your organization's consent policy, an administrator may need to grant permission. See Microsoft's [desktop app configuration](https://learn.microsoft.com/en-us/entra/identity-platform/scenario-desktop-app-configuration) and [Calendars.Read permission](https://learn.microsoft.com/en-us/graph/permissions-reference#calendarsread).
+
+## Publisher setup
+
+The bundled Client ID is `3a1efa33-d7f2-414b-99f4-d40a0d878489`. Its Entra registration must support **Accounts in any organizational directory**, use the desktop redirect URI `http://localhost`, and request Microsoft Graph delegated `Calendars.Read`. The app uses the `organizations` authority for normal sign-in. Test with a non-administrator account in another organization before publishing a new release. That organization's consent policy may still require its administrator to approve the shared app.
 
 ## Build
 

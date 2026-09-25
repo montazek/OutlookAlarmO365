@@ -78,6 +78,7 @@ public class OutlookAlarmSettings : ISettings
     public static OutlookAlarmSettings Load()
     {
         OutlookAlarmSettings? settings;
+        var migrateGraphSettings = false;
 
         if (File.Exists(GetSettingsFile()))
         {
@@ -85,11 +86,35 @@ public class OutlookAlarmSettings : ISettings
 
             if (string.IsNullOrWhiteSpace(settingsJson)) return new OutlookAlarmSettings();
 
-            var options = new JsonSerializerOptions { WriteIndented = true, Converters = { new ColorJsonConverter() } };
+            var options = GetJsonSerializeOptions();
 
             // Use the JsonSerializer to deserialize the settings.
             settings = JsonSerializer.Deserialize<OutlookAlarmSettings>(settingsJson, options) ??
                        new OutlookAlarmSettings();
+
+            // Older files did not have a registration mode. Preserve a user's custom
+            // registration; only the previously bundled pair becomes the new default.
+            using (var document = JsonDocument.Parse(settingsJson))
+            {
+                var graphElement = document.RootElement.EnumerateObject()
+                    .FirstOrDefault(property => property.Name.Equals("Graph", StringComparison.OrdinalIgnoreCase)).Value;
+                var hasMode = graphElement.ValueKind == JsonValueKind.Object &&
+                    graphElement.EnumerateObject().Any(property =>
+                        property.Name.Equals("UseCustomAppRegistration", StringComparison.OrdinalIgnoreCase));
+                if (!hasMode)
+                {
+                    var graph = settings.Graph ?? new GraphSettings();
+                    var isBundledPair = string.Equals(graph.ClientId, GraphSettings.DefaultClientId,
+                            StringComparison.OrdinalIgnoreCase) &&
+                        (string.Equals(graph.TenantId, GraphSettings.LegacyDefaultTenantId,
+                             StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(graph.TenantId, GraphSettings.OrganizationsTenant,
+                             StringComparison.OrdinalIgnoreCase));
+                    graph.UseCustomAppRegistration = !isBundledPair;
+                    settings.Graph = graph;
+                    migrateGraphSettings = true;
+                }
+            }
 
             settings.Alarm.Save = settings.Save;
             settings.AlarmSource.Save = settings.Save;
@@ -100,6 +125,7 @@ public class OutlookAlarmSettings : ISettings
             settings.Graph.Save = settings.Save;
             settings.Main.Save = settings.Save;
             settings.TimeManagement.Save = settings.Save;
+            if (migrateGraphSettings) settings.Save();
         }
         else
         {

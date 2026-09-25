@@ -27,6 +27,7 @@ public partial class MainForm : BaseForm, IMainForm
     private bool _isExpanded;
     private bool _alarmManagerStarted;
     private bool _showingMicrosoft365Settings;
+    private bool _signInPromptDismissed;
 
     public MainForm(ISettings settings, IAlarmManager alarmManager, IAlarmContainerControl containerControl) :
         base(true)
@@ -122,7 +123,7 @@ public partial class MainForm : BaseForm, IMainForm
             return false;
         }
 
-        if (account is null && showSettingsWhenRequired)
+        if (account is null && showSettingsWhenRequired && !_signInPromptDismissed)
         {
             _showingMicrosoft365Settings = true;
             try
@@ -148,9 +149,11 @@ public partial class MainForm : BaseForm, IMainForm
                 OutlookAlarmLog.Write("Unable to verify Microsoft 365 sign-in after Settings closed.", exception);
                 return false;
             }
+            _signInPromptDismissed = account is null;
         }
 
         if (account is null) return false;
+        _signInPromptDismissed = false;
 
         if (!_alarmManagerStarted)
         {

@@ -7,11 +7,26 @@ Classic Outlook and New Outlook do not need to be installed or running.
 Microsoft 365 connection
 ------------------------
 - On first launch, Settings opens directly on the Microsoft 365 tab.
-- The included Client ID and Tenant ID are used by default.
-- Change those values before clicking Connect only when using a different Entra app or tenant.
+- Click Connect and sign in with a work or school Microsoft 365 account.
+- The included multitenant Client ID is used automatically. No Tenant ID or
+  personal app registration is needed for normal use.
+- A tenant administrator may still have to approve the app under that
+  organization's consent policy. Contact IT if sign-in asks for approval.
+- An optional Advanced setting accepts your own app registration and tenant.
 - The app requests the delegated Microsoft Graph Calendars.Read permission.
 - The MSAL token cache is stored under LocalAppData/GarageKept.OutlookAlarm.O365.
+- The app remembers the connected account for later starts. Account switching
+  and disconnect are not supported in this version.
 - When Microsoft requires a new interactive sign-in, the Microsoft 365 Settings tab opens again.
+
+Publisher registration
+----------------------
+The included Client ID is 3a1efa33-d7f2-414b-99f4-d40a0d878489. Its Entra
+registration must support accounts in any organizational directory (multiple
+Entra tenants), have the Mobile and desktop applications redirect URI
+http://localhost, and request Microsoft Graph delegated Calendars.Read.
+The code uses the organizations authority; personal Outlook.com accounts are
+not supported. Test sign-in with a user in another organization before release.
 
 Deployment
 ----------

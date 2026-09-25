@@ -4,6 +4,7 @@ using GarageKept.OutlookAlarm.Alarm.Audio;
 using GarageKept.OutlookAlarm.Alarm.Interfaces;
 using GarageKept.OutlookAlarm.Alarm.Settings;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Identity.Client;
 using Microsoft.Win32;
 using Timer = System.Windows.Forms.Timer;
 
@@ -22,8 +23,11 @@ public partial class SettingsForm : BaseForm, ISettingsForm
     private readonly TabPage _microsoft365Page = new("Microsoft 365");
     private readonly TextBox _clientIdTextBox = new() { Dock = DockStyle.Fill };
     private readonly TextBox _tenantIdTextBox = new() { Dock = DockStyle.Fill };
+    private readonly CheckBox _useCustomRegistrationCheckBox = new()
+        { AutoSize = true, Text = "Advanced: use my own app registration" };
+    private readonly TableLayoutPanel _advancedRegistrationPanel = new() { Dock = DockStyle.Fill, AutoSize = true };
     private readonly Label _connectionStatusLabel = new() { AutoSize = true, Text = "Not connected" };
-    private readonly Button _connectButton = new() { AutoSize = true, Text = "Connect" };
+    private readonly Button _connectButton = new() { AutoSize = true, Text = "Connect Microsoft 365" };
     private bool _closeAfterConnect;
     private bool _isExpanded;
     private Timer? _slidingTimer;
@@ -319,6 +323,8 @@ public partial class SettingsForm : BaseForm, ISettingsForm
 
         _clientIdTextBox.Text = Settings.Graph.ClientId;
         _tenantIdTextBox.Text = Settings.Graph.TenantId;
+        _useCustomRegistrationCheckBox.Checked = Settings.Graph.UseCustomAppRegistration;
+        _advancedRegistrationPanel.Visible = _useCustomRegistrationCheckBox.Checked;
         _ = RefreshMicrosoft365StatusAsync();
 
         return base.ShowDialog();
@@ -331,7 +337,7 @@ public partial class SettingsForm : BaseForm, ISettingsForm
             Dock = DockStyle.Fill,
             Padding = new Padding(12),
             ColumnCount = 2,
-            RowCount = 6
+            RowCount = 5
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -340,20 +346,32 @@ public partial class SettingsForm : BaseForm, ISettingsForm
         {
             AutoSize = true,
             Dock = DockStyle.Fill,
-            Text = "Connect the app to Microsoft 365 so it can read your calendar. " +
-                   "The default values normally do not need to be changed."
+            Text = "Connect to Microsoft 365 to read your calendar. " +
+                   "Your organization may require administrator approval."
         };
         layout.Controls.Add(explanation, 0, 0);
         layout.SetColumnSpan(explanation, 2);
-        layout.Controls.Add(new Label { AutoSize = true, Text = "Client ID:", Anchor = AnchorStyles.Left }, 0, 1);
-        layout.Controls.Add(_clientIdTextBox, 1, 1);
-        layout.Controls.Add(new Label { AutoSize = true, Text = "Tenant ID:", Anchor = AnchorStyles.Left }, 0, 2);
-        layout.Controls.Add(_tenantIdTextBox, 1, 2);
-        layout.Controls.Add(new Label { AutoSize = true, Text = "Status:", Anchor = AnchorStyles.Left }, 0, 3);
-        layout.Controls.Add(_connectionStatusLabel, 1, 3);
-        layout.Controls.Add(_connectButton, 1, 4);
+        layout.Controls.Add(new Label { AutoSize = true, Text = "Status:", Anchor = AnchorStyles.Left }, 0, 1);
+        layout.Controls.Add(_connectionStatusLabel, 1, 1);
+        layout.Controls.Add(_connectButton, 1, 2);
+        layout.Controls.Add(_useCustomRegistrationCheckBox, 0, 3);
+        layout.SetColumnSpan(_useCustomRegistrationCheckBox, 2);
+
+        _advancedRegistrationPanel.ColumnCount = 2;
+        _advancedRegistrationPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _advancedRegistrationPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _advancedRegistrationPanel.Controls.Add(
+            new Label { AutoSize = true, Text = "Client ID:", Anchor = AnchorStyles.Left }, 0, 0);
+        _advancedRegistrationPanel.Controls.Add(_clientIdTextBox, 1, 0);
+        _advancedRegistrationPanel.Controls.Add(
+            new Label { AutoSize = true, Text = "Tenant ID or domain (optional):", Anchor = AnchorStyles.Left }, 0, 1);
+        _advancedRegistrationPanel.Controls.Add(_tenantIdTextBox, 1, 1);
+        layout.Controls.Add(_advancedRegistrationPanel, 0, 4);
+        layout.SetColumnSpan(_advancedRegistrationPanel, 2);
 
         _connectButton.Click += ConnectButton_Click;
+        _useCustomRegistrationCheckBox.CheckedChanged += (_, _) =>
+            _advancedRegistrationPanel.Visible = _useCustomRegistrationCheckBox.Checked;
         _microsoft365Page.Controls.Add(layout);
         settingsTabControl.TabPages.Add(_microsoft365Page);
     }
@@ -362,21 +380,24 @@ public partial class SettingsForm : BaseForm, ISettingsForm
     {
         var clientId = _clientIdTextBox.Text.Trim();
         var tenantId = _tenantIdTextBox.Text.Trim();
-        if (!Guid.TryParse(clientId, out _))
+        var useCustom = _useCustomRegistrationCheckBox.Checked;
+        if (useCustom && !Guid.TryParse(clientId, out _))
         {
             MessageBox.Show(this, "Client ID must be a valid GUID.", "Microsoft 365",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        if (string.IsNullOrWhiteSpace(tenantId))
+        if (useCustom && tenantId.Length > 0 &&
+            !tenantId.Equals(GraphSettings.OrganizationsTenant, StringComparison.OrdinalIgnoreCase) &&
+            !Guid.TryParse(tenantId, out _) &&
+            !(tenantId.Contains('.') && Uri.CheckHostName(tenantId) == UriHostNameType.Dns))
         {
-            MessageBox.Show(this, "Tenant ID is required.", "Microsoft 365",
+            MessageBox.Show(this, "Tenant must be a GUID, a tenant domain, or organizations.", "Microsoft 365",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
-        Settings.Graph.ClientId = clientId;
-        Settings.Graph.TenantId = tenantId;
+        Settings.Graph.ConfigureRegistration(useCustom, clientId, tenantId);
         _connectButton.Enabled = false;
         _connectionStatusLabel.Text = "Connecting...";
 
@@ -386,16 +407,35 @@ public partial class SettingsForm : BaseForm, ISettingsForm
             if (authentication is null) throw new InvalidOperationException("Authentication service is unavailable.");
             var account = await authentication.ConnectAsync(Handle);
             _connectionStatusLabel.Text = $"Connected as {account}";
-            _connectButton.Text = "Reconnect";
+            _connectButton.Text = "Reconnect Microsoft 365";
+            _useCustomRegistrationCheckBox.Enabled = false;
+            _clientIdTextBox.Enabled = false;
+            _tenantIdTextBox.Enabled = false;
             if (_closeAfterConnect)
             {
                 DialogResult = DialogResult.OK;
                 Close();
             }
         }
+        catch (MsalClientException exception) when (
+            exception.ErrorCode is "authentication_canceled" or "user_canceled")
+        {
+            _connectionStatusLabel.Text = "Sign-in canceled";
+        }
+        catch (MsalServiceException exception)
+        {
+            await RefreshMicrosoft365StatusAsync();
+            var detail = string.IsNullOrWhiteSpace(exception.ErrorCode)
+                ? string.Empty
+                : $" Error code: {exception.ErrorCode}.";
+            MessageBox.Show(this,
+                "Microsoft 365 rejected the sign-in. If Microsoft asked for administrator approval, " +
+                "contact your organization's IT team." + detail,
+                "Microsoft 365 sign-in failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
         catch (Exception exception)
         {
-            _connectionStatusLabel.Text = "Not connected";
+            await RefreshMicrosoft365StatusAsync();
             MessageBox.Show(this, exception.Message, "Microsoft 365 sign-in failed",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
@@ -413,13 +453,17 @@ public partial class SettingsForm : BaseForm, ISettingsForm
             var account = authentication is null ? null : await authentication.GetConnectedAccountAsync();
             if (IsDisposed) return;
             _connectionStatusLabel.Text = account is null ? "Not connected" : $"Connected as {account}";
-            _connectButton.Text = account is null ? "Connect" : "Reconnect";
+            _connectButton.Text = account is null ? "Connect Microsoft 365" : "Reconnect Microsoft 365";
+            var registrationEditable = string.IsNullOrWhiteSpace(Settings.Graph.SelectedAccountId);
+            _useCustomRegistrationCheckBox.Enabled = registrationEditable;
+            _clientIdTextBox.Enabled = registrationEditable;
+            _tenantIdTextBox.Enabled = registrationEditable;
         }
         catch (Exception exception)
         {
             if (IsDisposed) return;
             _connectionStatusLabel.Text = $"Connection check failed: {exception.Message}";
-            _connectButton.Text = "Connect";
+            _connectButton.Text = "Connect Microsoft 365";
         }
     }
 

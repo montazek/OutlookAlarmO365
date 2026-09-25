@@ -28,7 +28,7 @@ internal sealed class GraphAuthenticationService
     public async Task<string> GetAccessTokenAsync()
     {
         var app = await GetApplicationAsync().ConfigureAwait(false);
-        var account = (await app.GetAccountsAsync().ConfigureAwait(false)).FirstOrDefault();
+        var account = await GetSelectedAccountAsync(app).ConfigureAwait(false);
         if (account is null)
         {
             SignInRequired?.Invoke();
@@ -37,7 +37,7 @@ internal sealed class GraphAuthenticationService
 
         try
         {
-            var result = await app.AcquireTokenSilent(Scopes, account).ExecuteAsync().ConfigureAwait(false);
+            var result = await AcquireTokenSilentAsync(app, account).ConfigureAwait(false);
             return result.AccessToken;
         }
         catch (MsalUiRequiredException)
@@ -58,6 +58,21 @@ internal sealed class GraphAuthenticationService
             builder = builder.WithParentActivityOrWindow(parentWindowHandle);
 
         var result = await builder.ExecuteAsync().ConfigureAwait(true);
+        var accountId = result.Account?.HomeAccountId?.Identifier;
+        if (string.IsNullOrWhiteSpace(accountId) || string.IsNullOrWhiteSpace(result.TenantId))
+            throw new InvalidOperationException("Microsoft 365 did not return an account and tenant.");
+
+        var graph = _settings.Graph;
+        if (string.Equals(graph.SelectedConfigurationKey, graph.ConfigurationKey,
+                StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(graph.SelectedAccountId) &&
+            (!string.Equals(graph.SelectedAccountId, accountId, StringComparison.OrdinalIgnoreCase) ||
+             !string.Equals(graph.SelectedTenantId, result.TenantId, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException(
+                "This installation is already connected to another Microsoft 365 account. " +
+                "Account switching is not supported in this version.");
+
+        graph.SelectAccount(accountId, result.TenantId);
         return result.Account?.Username ?? "Connected";
     }
 
@@ -66,10 +81,10 @@ internal sealed class GraphAuthenticationService
         try
         {
             var app = await GetApplicationAsync().ConfigureAwait(false);
-            var account = (await app.GetAccountsAsync().ConfigureAwait(false)).FirstOrDefault();
+            var account = await GetSelectedAccountAsync(app).ConfigureAwait(false);
             if (account is null) return null;
 
-            await app.AcquireTokenSilent(Scopes, account).ExecuteAsync().ConfigureAwait(false);
+            await AcquireTokenSilentAsync(app, account).ConfigureAwait(false);
             return account.Username;
         }
         catch (MsalUiRequiredException)
@@ -78,10 +93,46 @@ internal sealed class GraphAuthenticationService
         }
     }
 
+    private async Task<IAccount?> GetSelectedAccountAsync(IPublicClientApplication app)
+    {
+        var accounts = (await app.GetAccountsAsync().ConfigureAwait(false)).ToList();
+        var graph = _settings.Graph;
+        if (!string.IsNullOrWhiteSpace(graph.SelectedAccountId))
+        {
+            if (!string.Equals(graph.SelectedConfigurationKey, graph.ConfigurationKey,
+                    StringComparison.OrdinalIgnoreCase)) return null;
+            return accounts.FirstOrDefault(account => string.Equals(
+                account.HomeAccountId?.Identifier, graph.SelectedAccountId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Migrate an existing installation only when its cache is unambiguous.
+        if (accounts.Count != 1) return null;
+        try
+        {
+            var result = await app.AcquireTokenSilent(Scopes, accounts[0]).ExecuteAsync().ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(result.Account?.HomeAccountId?.Identifier) ||
+                string.IsNullOrWhiteSpace(result.TenantId)) return null;
+            graph.SelectAccount(result.Account.HomeAccountId.Identifier, result.TenantId);
+            return accounts[0];
+        }
+        catch (MsalUiRequiredException)
+        {
+            return null;
+        }
+    }
+
+    private Task<AuthenticationResult> AcquireTokenSilentAsync(IPublicClientApplication app, IAccount account)
+    {
+        var builder = app.AcquireTokenSilent(Scopes, account);
+        if (!string.IsNullOrWhiteSpace(_settings.Graph.SelectedTenantId))
+            builder = builder.WithTenantId(_settings.Graph.SelectedTenantId);
+        return builder.ExecuteAsync();
+    }
+
     private async Task<IPublicClientApplication> GetApplicationAsync()
     {
-        var clientId = _settings.Graph.ClientId.Trim();
-        var tenantId = _settings.Graph.TenantId.Trim();
+        var clientId = _settings.Graph.EffectiveClientId.Trim();
+        var tenantId = _settings.Graph.EffectiveTenantId.Trim();
         if (string.IsNullOrWhiteSpace(clientId))
             throw new InvalidOperationException("Microsoft 365 Client ID is required.");
         if (string.IsNullOrWhiteSpace(tenantId)) tenantId = "organizations";
@@ -98,7 +149,7 @@ internal sealed class GraphAuthenticationService
 
             var app = PublicClientApplicationBuilder.Create(clientId)
                 .WithAuthority(AzureCloudInstance.AzurePublic, tenantId)
-                .WithDefaultRedirectUri()
+                .WithRedirectUri("http://localhost")
                 .Build();
 
             var cacheDirectory = Path.Combine(
