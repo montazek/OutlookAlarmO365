@@ -180,12 +180,14 @@ public partial class MainForm : BaseForm, IMainForm
         {
             case PowerModes.Suspend:
                 // System is going to sleep, stop periodic calendar work until resume.
+                OutlookAlarmLog.Write("System suspend detected.");
                 RefreshTimer.Stop();
                 AlarmManager.Stop();
                 break;
             case PowerModes.Resume:
                 // Restart both timers. The next fetch obtains a fresh Graph token/request
                 // instead of relying on state that survived sleep.
+                OutlookAlarmLog.Write("System resume detected; restarting alarm checks.");
                 RefreshTimer.Start();
                 if (_alarmManagerStarted)
                 {
