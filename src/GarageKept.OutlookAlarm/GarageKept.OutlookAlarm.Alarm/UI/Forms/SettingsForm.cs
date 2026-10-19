@@ -44,7 +44,6 @@ public partial class SettingsForm : BaseForm, ISettingsForm
         // Show in center of screen
         Top = (ScreenHeight - Height) / 2;
         Left = (ScreenWidth - Width) / 2;
-        BarHeightNumericUpDown.Value = Settings.Main.BarSize;
     }
 
     private ISettings Settings { get; }
@@ -65,17 +64,22 @@ public partial class SettingsForm : BaseForm, ISettingsForm
 
     public new DialogResult ShowDialog()
     {
+        var virtualScreen = SystemInformation.VirtualScreen;
+
         #region Main
 
         #region Main.Left
 
-        LeftNumericUpDown.Minimum = 0;
-        LeftNumericUpDown.Maximum = ScreenWidth - Owner?.Width ?? 0;
-        LeftNumericUpDown.Value = Settings.Main.Left;
-
-        LeftTrackBar.Minimum = 0;
-        LeftTrackBar.Maximum = (int)LeftNumericUpDown.Maximum;
-        LeftTrackBar.Value = Settings.Main.Left;
+        var leftMinimum = virtualScreen.Left;
+        var leftMaximum = Math.Max(leftMinimum, virtualScreen.Right - (Owner?.Width ?? 0));
+        var left = ClampToRange(Settings.Main.Left, leftMinimum, leftMaximum);
+        LeftNumericUpDown.Minimum = leftMinimum;
+        LeftNumericUpDown.Maximum = leftMaximum;
+        LeftTrackBar.Minimum = leftMinimum;
+        LeftTrackBar.Maximum = leftMaximum;
+        LeftNumericUpDown.Value = left;
+        LeftTrackBar.Value = left;
+        Settings.Main.Left = left;
 
         #endregion
 
@@ -83,7 +87,9 @@ public partial class SettingsForm : BaseForm, ISettingsForm
 
         BarHeightNumericUpDown.Minimum = 1;
         BarHeightNumericUpDown.Maximum = 20;
-        BarHeightNumericUpDown.Value = Settings.Main.BarSize;
+        var barSize = ClampToRange(Settings.Main.BarSize, 1, 20);
+        BarHeightNumericUpDown.Value = barSize;
+        Settings.Main.BarSize = barSize;
 
         #endregion
 
@@ -92,26 +98,33 @@ public partial class SettingsForm : BaseForm, ISettingsForm
         SliderSpeedNumericUpDown.ValueChanged -= SliderSpeedNumericUpDown_ValueChanged;
         SliderSpeedNumericUpDown.Minimum = 1;
         SliderSpeedNumericUpDown.Maximum = 20;
-        SliderSpeedNumericUpDown.Value = Settings.Main.SliderSpeed;
+        var sliderSpeed = ClampToRange(Settings.Main.SliderSpeed, 1, 20);
+        SliderSpeedNumericUpDown.Value = sliderSpeed;
         SliderSpeedNumericUpDown.ValueChanged += SliderSpeedNumericUpDown_ValueChanged;
 
         SliderSpeedTrackBar.ValueChanged -= SliderSpeedTrackBar_ValueChanged;
         SliderSpeedTrackBar.Minimum = 1;
         SliderSpeedTrackBar.Maximum = 20;
-        SliderSpeedTrackBar.Value = Settings.Main.SliderSpeed;
+        SliderSpeedTrackBar.Value = sliderSpeed;
         SliderSpeedTrackBar.ValueChanged += SliderSpeedTrackBar_ValueChanged;
+        Settings.Main.SliderSpeed = sliderSpeed;
 
         #endregion
 
         #region Main.MinimumWidth
 
+        var minimumWidthMaximum = Screen.AllScreens
+            .Select(screen => screen.WorkingArea.Width)
+            .DefaultIfEmpty(Math.Max(0, ScreenWidth))
+            .Max();
+        var minimumWidth = ClampToRange(Settings.Main.MinimumWidth, 0, minimumWidthMaximum);
         MinimumWidthNumericUpDown.Minimum = 0;
-        MinimumWidthNumericUpDown.Maximum = ScreenWidth;
-        MinimumWidthNumericUpDown.Value = Settings.Main.MinimumWidth;
-
+        MinimumWidthNumericUpDown.Maximum = minimumWidthMaximum;
         MinimumWidthTrackBar.Minimum = 0;
-        MinimumWidthTrackBar.Maximum = ScreenWidth;
-        MinimumWidthTrackBar.Value = Settings.Main.MinimumWidth;
+        MinimumWidthTrackBar.Maximum = minimumWidthMaximum;
+        MinimumWidthNumericUpDown.Value = minimumWidth;
+        MinimumWidthTrackBar.Value = minimumWidth;
+        Settings.Main.MinimumWidth = minimumWidth;
 
         #endregion
 
@@ -123,7 +136,9 @@ public partial class SettingsForm : BaseForm, ISettingsForm
 
         AlarmWarningTimeNumericUpDown.Minimum = 0;
         AlarmWarningTimeNumericUpDown.Maximum = 60;
-        AlarmWarningTimeNumericUpDown.Value = Settings.Alarm.AlarmWarningTime;
+        var alarmWarningTime = ClampToRange(Settings.Alarm.AlarmWarningTime, 0, 60);
+        AlarmWarningTimeNumericUpDown.Value = alarmWarningTime;
+        Settings.Alarm.AlarmWarningTime = alarmWarningTime;
 
         #endregion
 
@@ -142,17 +157,24 @@ public partial class SettingsForm : BaseForm, ISettingsForm
 
         #region Alarm.Top
 
-        AlarmLocationTopNumericUpDown.Minimum = 0;
-        AlarmLocationTopNumericUpDown.Maximum = ScreenHeight - 96;
-        AlarmLocationTopNumericUpDown.Value = Settings.Alarm.Top;
+        var alarmTopMinimum = virtualScreen.Top;
+        var alarmTopMaximum = Math.Max(alarmTopMinimum, virtualScreen.Bottom - 96);
+        var alarmTop = ClampToRange(Settings.Alarm.Top, alarmTopMinimum, alarmTopMaximum);
+        AlarmLocationTopNumericUpDown.Minimum = alarmTopMinimum;
+        AlarmLocationTopNumericUpDown.Maximum = alarmTopMaximum;
+        AlarmLocationTopNumericUpDown.Value = alarmTop;
+        Settings.Alarm.Top = alarmTop;
 
         #endregion
 
         #region Alarm.Left
 
+        var alarmLeftMaximum = Math.Max(-1, virtualScreen.Right - 330);
+        var alarmLeft = ClampToRange(Settings.Alarm.Left, -1, alarmLeftMaximum);
         AlarmLocationLeftNumericUpDown.Minimum = -1;
-        AlarmLocationLeftNumericUpDown.Maximum = ScreenWidth - 330;
-        AlarmLocationLeftNumericUpDown.Value = Settings.Alarm.Left;
+        AlarmLocationLeftNumericUpDown.Maximum = alarmLeftMaximum;
+        AlarmLocationLeftNumericUpDown.Value = alarmLeft;
+        Settings.Alarm.Left = alarmLeft;
 
         #endregion
 
@@ -164,7 +186,9 @@ public partial class SettingsForm : BaseForm, ISettingsForm
 
         FetchIntervalNumericUpDown.Minimum = 1;
         FetchIntervalNumericUpDown.Maximum = 60;
-        FetchIntervalNumericUpDown.Value = Settings.AlarmSource.FetchIntervalInMinutes;
+        var fetchInterval = ClampToRange(Settings.AlarmSource.FetchIntervalInMinutes, 1, 60);
+        FetchIntervalNumericUpDown.Value = fetchInterval;
+        Settings.AlarmSource.FetchIntervalInMinutes = fetchInterval;
 
         #endregion
 
@@ -172,7 +196,9 @@ public partial class SettingsForm : BaseForm, ISettingsForm
 
         FetchTimeNumericUpDown.Minimum = 1;
         FetchTimeNumericUpDown.Maximum = 24;
-        FetchTimeNumericUpDown.Value = Settings.AlarmSource.FetchTimeInHours;
+        var fetchTime = ClampToRange(Settings.AlarmSource.FetchTimeInHours, 1, 24);
+        FetchTimeNumericUpDown.Value = fetchTime;
+        Settings.AlarmSource.FetchTimeInHours = fetchTime;
 
         #endregion
 
@@ -212,7 +238,9 @@ public partial class SettingsForm : BaseForm, ISettingsForm
 
         OffAfterStartNumericUpDown.Minimum = -1;
         OffAfterStartNumericUpDown.Maximum = 60;
-        OffAfterStartNumericUpDown.Value = Settings.Audio.TurnOffAlarmAfterStart;
+        var turnOffAfterStart = ClampToRange(Settings.Audio.TurnOffAlarmAfterStart, -1, 60);
+        OffAfterStartNumericUpDown.Value = turnOffAfterStart;
+        Settings.Audio.TurnOffAlarmAfterStart = turnOffAfterStart;
 
         #endregion
 
@@ -328,6 +356,12 @@ public partial class SettingsForm : BaseForm, ISettingsForm
         _ = RefreshMicrosoft365StatusAsync();
 
         return base.ShowDialog();
+    }
+
+    private static int ClampToRange(int value, int minimum, int maximum)
+    {
+        if (maximum < minimum) maximum = minimum;
+        return Math.Clamp(value, minimum, maximum);
     }
 
     private void InitializeMicrosoft365Page()
