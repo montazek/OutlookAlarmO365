@@ -34,14 +34,27 @@ public partial class AlarmContainerControl : TableLayoutPanel, IAlarmContainerCo
         get => _alarms;
         set
         {
-            _alarms = value.OrderBy(s => s.Start).ToArray();
-
-            for (var i = 0; i < AlarmControls.Length; i++)
-                AlarmControls[i].Alarm = i < _alarms.Length ? _alarms[i] : null;
+            var alarmSnapshot = value.OrderBy(s => s.Start).ToArray();
 
             if (InvokeRequired)
-                Invoke(() => { RefreshTimer_Tick(this, EventArgs.Empty); });
+            {
+                if (!IsDisposed && IsHandleCreated)
+                    BeginInvoke(() => ApplyAlarms(alarmSnapshot));
+                return;
+            }
+
+            ApplyAlarms(alarmSnapshot);
         }
+    }
+
+    private void ApplyAlarms(IAlarm[] alarms)
+    {
+        _alarms = alarms;
+
+        for (var i = 0; i < AlarmControls.Length; i++)
+            AlarmControls[i].Alarm = i < _alarms.Length ? _alarms[i] : null;
+
+        RefreshTimer_Tick(this, EventArgs.Empty);
     }
 
     public void RefreshTimer_Tick(object? sender, EventArgs e)

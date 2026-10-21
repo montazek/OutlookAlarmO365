@@ -8,6 +8,7 @@ namespace GarageKept.OutlookAlarm.Alarm.UI.Controls;
 public partial class AlarmControl : UserControl, IAlarmControl
 {
     private IAlarm? _alarm;
+    private string? _handledExpiration;
 
     public AlarmControl(IAlarmManager alarmManager, ISettings settings)
     {
@@ -25,12 +26,14 @@ public partial class AlarmControl : UserControl, IAlarmControl
         get => _alarm;
         set
         {
-            _alarm = value;
-
             if (InvokeRequired)
-                Invoke(UpdateDisplay);
-            else
-                UpdateDisplay();
+            {
+                if (!IsDisposed && IsHandleCreated)
+                    BeginInvoke(() => ApplyAlarm(value));
+                return;
+            }
+
+            ApplyAlarm(value);
         }
     }
 
@@ -39,8 +42,23 @@ public partial class AlarmControl : UserControl, IAlarmControl
         if (Alarm is null) return;
 
         if (Alarm.End < DateTime.Now)
-            AlarmManager.ChangeAlarmState(Alarm, AlarmAction.Dismiss);
+        {
+            var expiration = $"{Alarm.Id}\0{Alarm.End.Ticks}";
+            if (_handledExpiration != expiration)
+            {
+                _handledExpiration = expiration;
+                AlarmManager.ChangeAlarmState(Alarm, AlarmAction.Dismiss);
+            }
+            return;
+        }
 
+        UpdateDisplay();
+    }
+
+    private void ApplyAlarm(IAlarm? alarm)
+    {
+        _alarm = alarm;
+        if (alarm is null || alarm.End >= DateTime.Now) _handledExpiration = null;
         UpdateDisplay();
     }
 

@@ -28,6 +28,7 @@ public partial class MainForm : BaseForm, IMainForm
     private bool _alarmManagerStarted;
     private bool _showingMicrosoft365Settings;
     private bool _signInPromptDismissed;
+    private long _lastAlarmUpdateVersion;
 
     public MainForm(ISettings settings, IAlarmManager alarmManager, IAlarmContainerControl containerControl) :
         base(true)
@@ -218,16 +219,28 @@ public partial class MainForm : BaseForm, IMainForm
     private IAlarmManager AlarmManager { get; }
     private IAlarmContainerControl ContainerControl { get; }
 
-    public void UpdateAlarms(IEnumerable<IAlarm> alarms)
+    public void UpdateAlarms(long version, IEnumerable<IAlarm> alarms)
     {
+        var alarmSnapshot = alarms.ToArray();
+
+        if (InvokeRequired)
+        {
+            if (!IsDisposed && IsHandleCreated)
+                BeginInvoke(() => ApplyAlarmUpdate(version, alarmSnapshot));
+            return;
+        }
+
+        ApplyAlarmUpdate(version, alarmSnapshot);
+    }
+
+    private void ApplyAlarmUpdate(long version, IReadOnlyList<IAlarm> alarms)
+    {
+        if (version <= _lastAlarmUpdateVersion) return;
+        _lastAlarmUpdateVersion = version;
+
         ContainerControl.Alarms = alarms;
-
-        Invoke(()=>{
-
-            EnsureVisibleOnScreen();
-
-            CheckMouseLeaveForm();
-        });
+        EnsureVisibleOnScreen();
+        CheckMouseLeaveForm();
     }
 
     /// <summary>

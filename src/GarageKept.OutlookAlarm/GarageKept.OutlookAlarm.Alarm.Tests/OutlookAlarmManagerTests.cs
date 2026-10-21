@@ -70,6 +70,96 @@ public class OutlookAlarmManagerTests
         Assert.IsTrue(scheduledFor <= DateTime.Now.AddMinutes(5));
     }
 
+    [TestMethod]
+    public async Task CalendarRefreshAndExpiration_CanPublishWithoutDeadlock()
+    {
+        var source = new FakeAlarmSource(CreateAlarm("concurrent", DateTime.Now.AddHours(2)));
+        using var manager = CreateManager(source);
+        manager.ForceFetch();
+        var displayedAlarm = GetAlarm(manager, source.CurrentAlarm.Id);
+        using var callbackEntered = new ManualResetEventSlim();
+        using var releaseCallback = new ManualResetEventSlim();
+        long refreshVersion = 0;
+        long expirationVersion = 0;
+        manager.AlarmsUpdatedCallback = (version, alarms) =>
+        {
+            if (alarms.Any())
+            {
+                refreshVersion = version;
+                callbackEntered.Set();
+                releaseCallback.Wait(TimeSpan.FromSeconds(5));
+            }
+            else
+            {
+                expirationVersion = version;
+            }
+        };
+
+        var fetchTask = Task.Run(manager.ForceFetch);
+        Assert.IsTrue(callbackEntered.Wait(TimeSpan.FromSeconds(2)), "The refresh callback did not start.");
+
+        try
+        {
+            displayedAlarm.End = DateTime.Now.AddSeconds(-1);
+            var stateChangeTask = Task.Run(() =>
+                manager.ChangeAlarmState(displayedAlarm, AlarmAction.Dismiss));
+            var completedTask = await Task.WhenAny(stateChangeTask, Task.Delay(TimeSpan.FromSeconds(2)));
+
+            Assert.AreSame(stateChangeTask, completedTask,
+                "The state change waited for a UI update, indicating that the synchronization lock was still held.");
+            await stateChangeTask;
+            Assert.IsTrue(expirationVersion > refreshVersion,
+                "The expiration update should be newer than the in-flight calendar refresh.");
+        }
+        finally
+        {
+            releaseCallback.Set();
+            await fetchTask;
+        }
+    }
+
+    [TestMethod]
+    public void ExpiredAlarm_RepeatedDismissPublishesRemovalOnlyOnce()
+    {
+        var source = new FakeAlarmSource(CreateAlarm("expired", DateTime.Now.AddHours(2)));
+        using var manager = CreateManager(source);
+        manager.ForceFetch();
+        var displayedAlarm = GetAlarm(manager, source.CurrentAlarm.Id);
+        displayedAlarm.End = DateTime.Now.AddSeconds(-1);
+        var updateCount = 0;
+        IReadOnlyList<IAlarm>? latestAlarms = null;
+        manager.AlarmsUpdatedCallback = (_, alarms) =>
+        {
+            updateCount++;
+            latestAlarms = alarms.ToArray();
+        };
+
+        manager.ChangeAlarmState(displayedAlarm, AlarmAction.Dismiss);
+        manager.ChangeAlarmState(displayedAlarm, AlarmAction.Dismiss);
+
+        Assert.AreEqual(1, updateCount);
+        Assert.IsNotNull(latestAlarms);
+        Assert.AreEqual(0, latestAlarms.Count);
+        Assert.AreEqual(1, GetDictionaryCount(manager, "DismissedAlarms"));
+    }
+
+    [TestMethod]
+    public void CalendarRefresh_DoesNotAddAlreadyExpiredEvent()
+    {
+        var expiredAlarm = CreateAlarm("expired-source", DateTime.Now.AddHours(-1));
+        expiredAlarm.IsReminderEnabled = false;
+        var source = new FakeAlarmSource(expiredAlarm);
+        using var manager = CreateManager(source);
+        IReadOnlyList<IAlarm>? displayedAlarms = null;
+        manager.AlarmsUpdatedCallback = (_, alarms) => displayedAlarms = alarms.ToArray();
+
+        manager.ForceFetch();
+
+        Assert.IsNotNull(displayedAlarms);
+        Assert.AreEqual(0, displayedAlarms.Count);
+        Assert.AreEqual(0, GetDictionaryCount(manager, "Alarms"));
+    }
+
     private static OutlookAlarmManager CreateManager(FakeAlarmSource source) =>
         new(source, new FakeSettings());
 
@@ -96,6 +186,12 @@ public class OutlookAlarmManagerTests
         var dictionary = GetPrivateProperty(manager, "AlarmTimers");
         var registration = dictionary.GetType().GetProperty("Item")!.GetValue(dictionary, new object[] { alarmId })!;
         return (DateTime)registration.GetType().GetProperty("ScheduledFor")!.GetValue(registration)!;
+    }
+
+    private static IAlarm GetAlarm(OutlookAlarmManager manager, string alarmId)
+    {
+        var dictionary = GetPrivateProperty(manager, "Alarms");
+        return (IAlarm)dictionary.GetType().GetProperty("Item")!.GetValue(dictionary, new object[] { alarmId })!;
     }
 
     private static object GetPrivateProperty(OutlookAlarmManager manager, string propertyName) =>

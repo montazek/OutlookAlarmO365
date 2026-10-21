@@ -28,11 +28,14 @@ public sealed class OutlookAlarmManager : IAlarmManager
     private object SynchronizationLock { get; } = new();
     private Timer? UpdateAlarmListTimer { get; set; }
     private Timer? AlarmTimerReviewTimer { get; set; }
+    private long AlarmUpdateVersion { get; set; }
 
     public IAlarmManager.UpdateAlarmList AlarmsUpdatedCallback { get; set; }
 
     public void ChangeAlarmState(IAlarm alarm, AlarmAction action)
     {
+        AlarmUpdate? update = null;
+
         lock (SynchronizationLock)
         {
             if (!Alarms.TryGetValue(alarm.Id, out var currentAlarm)) return;
@@ -54,31 +57,45 @@ public sealed class OutlookAlarmManager : IAlarmManager
                         $"Alarm '{currentAlarm.Name}' ({currentAlarm.Id}) changed to {action}; reminder={currentAlarm.ReminderTime:O}.");
                     break;
                 case AlarmAction.Dismiss:
-                    DismissedAlarms[alarm.Id] = 0;
+                    if (!DismissedAlarms.TryAdd(alarm.Id, 0)) return;
+
                     TriggeredAlarms.TryRemove(alarm.Id, out _);
                     LocalReminderTimes.TryRemove(alarm.Id, out _);
                     RemoveAlarmTimerLocked(alarm.Id);
                     OutlookAlarmLog.Write($"Dismissed alarm '{currentAlarm.Name}' ({currentAlarm.Id}).");
+
+                    if (currentAlarm.End < DateTime.Now)
+                    {
+                        currentAlarm.IsActive = false;
+                        update = CreateAlarmUpdateLocked();
+                    }
                     break;
                 case AlarmAction.Remove:
                     DeactivateAlarmLocked(currentAlarm);
+                    update = CreateAlarmUpdateLocked();
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(action), action, null);
             }
         }
+
+        if (update is not null) OnAlarmsUpdated(update);
     }
 
     public void ForceFetch() { FetchAlarms(null); }
 
     public void Reset()
     {
+        AlarmUpdate update;
+
         lock (SynchronizationLock)
         {
             ClearLocalStateLocked();
             OutlookAlarmLog.Write("Reset all local alarms and timers.");
-            FetchAlarmsCore();
+            update = FetchAlarmsCoreLocked();
         }
+
+        OnAlarmsUpdated(update);
     }
 
     public void Start()
@@ -151,18 +168,32 @@ public sealed class OutlookAlarmManager : IAlarmManager
 
         try
         {
-            var alarmWindow = Program.ServiceProvider?.GetRequiredService<IAlarmForm>();
             var mainForm = Application.OpenForms.Count > 0 ? Application.OpenForms[0] : null;
             if (mainForm is null)
                 throw new InvalidOperationException("No application window is open.");
 
-            mainForm.Invoke(delegate { alarmWindow?.Show(alarm); });
+            mainForm.BeginInvoke(delegate
+            {
+                try
+                {
+                    Program.ServiceProvider?.GetRequiredService<IAlarmForm>().Show(alarm);
+                }
+                catch (Exception exception)
+                {
+                    HandleAlarmDisplayFailure(alarm, exception);
+                }
+            });
         }
         catch (Exception exception)
         {
-            lock (SynchronizationLock) TriggeredAlarms.TryRemove(alarmId, out _);
-            OutlookAlarmLog.Write($"Unable to display alarm '{alarm.Name}' ({alarm.Id}); it will be retried.", exception);
+            HandleAlarmDisplayFailure(alarm, exception);
         }
+    }
+
+    private void HandleAlarmDisplayFailure(IAlarm alarm, Exception exception)
+    {
+        lock (SynchronizationLock) TriggeredAlarms.TryRemove(alarm.Id, out _);
+        OutlookAlarmLog.Write($"Unable to display alarm '{alarm.Name}' ({alarm.Id}); it will be retried.", exception);
     }
 
     private void DeactivateAlarmLocked(IAlarm alarm)
@@ -173,17 +204,18 @@ public sealed class OutlookAlarmManager : IAlarmManager
         LocalReminderTimes.TryRemove(alarm.Id, out _);
         RemoveAlarmTimerLocked(alarm.Id);
         OutlookAlarmLog.Write($"Deactivated alarm '{alarm.Name}' ({alarm.Id}).");
-        OnAlarmsUpdated();
     }
 
     private void FetchAlarms(object? signature)
     {
         try
         {
+            AlarmUpdate update;
             lock (SynchronizationLock)
             {
-                FetchAlarmsCore();
+                update = FetchAlarmsCoreLocked();
             }
+            OnAlarmsUpdated(update);
         }
         catch (Exception exception)
         {
@@ -192,12 +224,15 @@ public sealed class OutlookAlarmManager : IAlarmManager
         }
     }
 
-    private void FetchAlarmsCore()
+    private AlarmUpdate FetchAlarmsCoreLocked()
     {
         RemoveOldAlarmsLocked();
 
-        var alarmsToCheck = GetActiveAlarms().Select(a => a.Id).ToHashSet();
-        var alarms = GetAlarmsFromSource(Settings.AlarmSource.FetchTimeInHours).ToList();
+        var alarmsToCheck = GetActiveAlarmsLocked().Select(a => a.Id).ToHashSet();
+        var now = DateTime.Now;
+        var alarms = GetAlarmsFromSource(Settings.AlarmSource.FetchTimeInHours)
+            .Where(alarm => alarm.End >= now)
+            .ToList();
 
         foreach (var alarm in alarms) alarmsToCheck.Remove(alarm.Id);
 
@@ -211,10 +246,11 @@ public sealed class OutlookAlarmManager : IAlarmManager
             else
                 AddAlarmLocked(alarm);
 
-        OnAlarmsUpdated();
+        return CreateAlarmUpdateLocked();
     }
 
-    private IEnumerable<IAlarm> GetActiveAlarms() => Alarms.Values.Where(a => a.IsActive).OrderBy(a => a.Start);
+    private IAlarm[] GetActiveAlarmsLocked() =>
+        Alarms.Values.Where(a => a.IsActive).OrderBy(a => a.Start).ToArray();
 
     private IEnumerable<IAlarm> GetAlarmsFromSource(int hours)
     {
@@ -238,12 +274,13 @@ public sealed class OutlookAlarmManager : IAlarmManager
     private void ReviewAlarmTimers(object? state)
     {
         List<string> overdueAlarmIds = new();
+        AlarmUpdate? update = null;
 
         try
         {
             lock (SynchronizationLock)
             {
-                RemoveOldAlarmsLocked();
+                if (RemoveOldAlarmsLocked()) update = CreateAlarmUpdateLocked();
                 var now = DateTime.Now;
 
                 foreach (var alarm in Alarms.Values)
@@ -263,6 +300,7 @@ public sealed class OutlookAlarmManager : IAlarmManager
                 }
             }
 
+            if (update is not null) OnAlarmsUpdated(update);
             foreach (var alarmId in overdueAlarmIds) TriggerAlarm(alarmId, "60-second recovery review");
         }
         catch (Exception exception)
@@ -306,7 +344,10 @@ public sealed class OutlookAlarmManager : IAlarmManager
     private DateTime GetEffectiveReminderTime(IAlarm alarm) =>
         LocalReminderTimes.TryGetValue(alarm.Id, out var reminderTime) ? reminderTime : alarm.ReminderTime;
 
-    private void OnAlarmsUpdated() { AlarmsUpdatedCallback.Invoke(GetActiveAlarms()); }
+    private AlarmUpdate CreateAlarmUpdateLocked() => new(++AlarmUpdateVersion, GetActiveAlarmsLocked());
+
+    private void OnAlarmsUpdated(AlarmUpdate update) =>
+        AlarmsUpdatedCallback.Invoke(update.Version, update.Alarms);
 
     private void RemoveAlarmTimerLocked(string alarmId)
     {
@@ -325,12 +366,14 @@ public sealed class OutlookAlarmManager : IAlarmManager
             $"Forgot local alarm '{alarm.Name}' ({alarm.Id}); it will be added again if the provider returns it.");
     }
 
-    private void RemoveOldAlarmsLocked()
+    private bool RemoveOldAlarmsLocked()
     {
         var now = DateTime.Now;
         var alarmsToRemove = Alarms.Values.Where(a => a.End < now).ToList();
 
         foreach (var alarm in alarmsToRemove) ForgetAlarmLocked(alarm);
+
+        return alarmsToRemove.Count > 0;
     }
 
     private void UpdateAlarmLocked(IAlarm alarm)
@@ -374,4 +417,5 @@ public sealed class OutlookAlarmManager : IAlarmManager
     }
 
     private sealed record AlarmTimerRegistration(Timer Timer, DateTime ScheduledFor);
+    private sealed record AlarmUpdate(long Version, IReadOnlyList<IAlarm> Alarms);
 }

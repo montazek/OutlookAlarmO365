@@ -4,7 +4,7 @@ namespace GarageKept.OutlookAlarm.Alarm.Interfaces;
 
 public interface IAlarmManager : IDisposable
 {
-    public delegate void UpdateAlarmList(IEnumerable<IAlarm> alarms);
+    public delegate void UpdateAlarmList(long version, IEnumerable<IAlarm> alarms);
 
     UpdateAlarmList AlarmsUpdatedCallback { get; set; }
 
